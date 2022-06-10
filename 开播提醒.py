@@ -5,6 +5,7 @@ from winotify import Notification, audio
 
 
 roomID = ["213"]
+wait_time = 60
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 YaBrowser/19.7.0.1635 Yowser/2.5 Safari/537.36"}
 
 
@@ -49,7 +50,7 @@ def main():
                 time.sleep(5)
                 continue
             if len(roomID) != 0:
-                time.sleep(60)
+                time.sleep(wait_time)
             else:
                 break
         else:
