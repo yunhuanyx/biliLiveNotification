@@ -6,7 +6,7 @@ from winotify import Notification, audio
 import time
 import pystray
 from pystray import MenuItem, Menu
-from PIL import Image
+from PIL import Image, ImageTk
 from pic2str import explode
 from base64 import b64decode
 from io import BytesIO
@@ -17,6 +17,7 @@ import requests
 byte_data = b64decode(explode)
 image_data = BytesIO(byte_data)
 image = Image.open(image_data)
+
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"}
 
 
@@ -50,12 +51,14 @@ def begin_listen():
 
         roomID = roomIdStr.split(',')
 
+        stateStr.set("状态：监听中")
         root.withdraw()
         listen.config(state=tk.DISABLED)
         try:
             listen_main(roomID, timeInterval)
         except:
             listen.config(state=tk.NORMAL)
+            stateStr.set("状态：空闲中")
             raise RuntimeError("监听结束")
     except OSError:
         tkmb.showerror(title="错误", message="未找到配置文件，请进入设置界面进行设置！")
@@ -184,16 +187,21 @@ class settingWindow(tk.Toplevel):
 
 
 root = tk.Tk()
-root.title('开播提醒')
-center_window(285, 50)
+root.title('B站开播提醒')
+center_window(285, 65)
 root.resizable(False, False)
 root.protocol('WM_DELETE_WINDOW', root.iconify)
+ico_img = ImageTk.PhotoImage(data=byte_data)
+root.iconphoto(True, ico_img)
 listen = ttk.Button(root, text='开始监听', command=listen_thread)
 listen.place(x=15, y=10)
 config = ttk.Button(root, text='设置', width=7, command=settingWindow)
 config.place(x=115, y=10)
 ext = ttk.Button(root, text='停止 & 退出', command=stop_close)
 ext.place(x=185, y=10)
+ttk.Separator(root, orient=tk.HORIZONTAL).place(x=5, y=45, relwidth=0.97)
+stateStr = tk.StringVar(value="状态：空闲中")
+state = ttk.Label(root, textvariable=stateStr).place(x=10, y=46)
 
 menu = (MenuItem('显示', show_window, default=True), Menu.SEPARATOR, MenuItem('退出', quit_window))
 icon = pystray.Icon("name", image, "开播提醒", menu)
