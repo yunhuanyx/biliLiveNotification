@@ -12,6 +12,8 @@ from base64 import b64decode
 from io import BytesIO
 import threading
 import requests
+import re
+import os
 
 
 byte_data = b64decode(explode)
@@ -19,6 +21,34 @@ image_data = BytesIO(byte_data)
 image = Image.open(image_data)
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"}
+
+errorflag = 0
+
+try:
+    with open("./BLN.ini", 'r+') as fp:
+        lst = fp.read()
+    matchObj = re.match("api=(.*)", lst)
+    st1 = re.search("roomID=(.*)", lst)
+    st2 = re.search("timeInterval=(.*)", lst)
+    if st1 is None or st2 is None:
+        raise AttributeError
+    api = matchObj.group(1)
+    if api == "":
+        with open("./BLN.ini", "r") as f1, open("./BLN.tmp", "w") as f2:
+            f2.write(re.sub("api=(.*)", "api=https://api.live.bilibili.com/room/v1/Room/room_init?id=", f1.read()))
+        os.remove("./BLN.ini")
+        os.rename("./BLN.tmp", "BLN.ini")
+        api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
+except FileNotFoundError:
+    with open("./BLN.ini", 'w') as fp:
+        fp.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n" + "roomID=" + "\n" + "timeInterval=60")
+    api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
+except AttributeError:
+    with open("./BLN.ini", "w") as f1, open("./BLNback.txt", "w") as f2:
+        f2.write(lst)
+        f1.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n" + "roomID=" + "\n" + "timeInterval=60")
+    api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
+    errorflag = 1
 
 
 def center_window(w, h):
@@ -42,14 +72,13 @@ def quit_window():
 def begin_listen():
     try:
         with open("./BLN.ini", 'r+') as fp:
-            lst = fp.readlines()
-        if lst[0] == "roomID=\n":
+            lst = fp.read()
+        roomIdStr = re.search("roomID=(.*)", lst).group(1)
+        if roomIdStr == "":
             tkmb.showerror(title="错误", message="房间号为空，请进入设置界面进行设置！")
             raise RuntimeError("房间号为空")
-        roomIdStr = lst[0].split("=")[1].replace('\n', '')
-        timeInterval = int(lst[1].split("=")[1])
-
         roomID = roomIdStr.split(',')
+        timeInterval = int(re.search("timeInterval=(.*)", lst).group(1))
 
         stateStr.set("状态：监听中")
         root.withdraw()
@@ -79,7 +108,7 @@ def on_exit():
 
 @retry(stop_max_attempt_number=5)
 def get_live_status(roomid):
-    url = "https://api.live.bilibili.com/room/v1/Room/room_init?id=" + roomid
+    url = api + roomid
     response = requests.get(url, headers=headers)
     assert response.status_code == 200
     return response.json()['data']['live_status']
@@ -132,7 +161,7 @@ def listen_main(roomID, wait_time):
             raise RuntimeError("监听结束")
 
 
-class settingWindow(tk.Toplevel):
+class SettingWindow(tk.Toplevel):
     def __init__(self):
         tk.Toplevel.__init__(self)
         self.title('设置')
@@ -144,18 +173,17 @@ class settingWindow(tk.Toplevel):
         x = (ws / 2) - (w / 2)
         y = (hs / 2) - (h / 2)
         self.geometry('%dx%d+%d+%d' % (w, h, x, y))
-        try:
-            with open("./BLN.ini", 'r+') as fp:
-                lst = fp.readlines()
-            self.idStr = lst[0].split("=")[1].replace('\n', '')
-            # print(self.idStr)
-            self.timeInt = tk.StringVar(value=lst[1].split("=")[1])
-            # print(self.timeInt.get())
-        except:
-            with open("./BLN.ini", 'w') as fp:
-                fp.write("roomID=" + "\n" + "timeInterval=60")
+        with open("./BLN.ini", 'r+') as fp:
+            lst = fp.read()
+
+        if re.search("roomID=(.*)", lst) == "":
             self.idStr = ""
-            self.timeInt = tk.StringVar(value="60")
+        else:
+            self.idStr = re.search("roomID=(.*)", lst).group(1)
+
+        # print(self.idStr)
+        self.timeInt = tk.StringVar(value=re.search("timeInterval=(.*)", lst).group(1))
+        # print(self.timeInt.get())
 
         self.idText = tk.Text(self, width=50, height=3, relief=tk.SUNKEN)
         self.setUI()
@@ -176,10 +204,16 @@ class settingWindow(tk.Toplevel):
         cancelSet.place(x=210, y=150)
 
     def save_setting(self):
-        idStr = self.idText.get('0.0', tk.END).replace('，', ',')
+        idStr = self.idText.get('0.0', tk.END).replace('，', ',').replace('\n', '')
+        print(idStr)
         timeIntStr = self.timeInt.get()
-        with open("./BLN.ini", 'w') as fp:
-            fp.write("roomID="+idStr+"timeInterval="+timeIntStr)
+
+        with open("./BLN.ini", "r") as f1, open("./BLN.tmp", "w") as f2:
+            strTmp = re.sub("roomID=(.*)", "roomID=" + idStr, f1.read())
+            f2.write(re.sub("timeInterval=(.*)", "timeInterval=" + timeIntStr, strTmp))
+        os.remove("./BLN.ini")
+        os.rename("./BLN.tmp", "BLN.ini")
+
         self.destroy()
 
     def cancel_setting(self):
@@ -195,7 +229,7 @@ ico_img = ImageTk.PhotoImage(data=byte_data)
 root.iconphoto(True, ico_img)
 listen = ttk.Button(root, text='开始监听', command=listen_thread)
 listen.place(x=15, y=10)
-config = ttk.Button(root, text='设置', width=7, command=settingWindow)
+config = ttk.Button(root, text='设置', width=7, command=SettingWindow)
 config.place(x=115, y=10)
 ext = ttk.Button(root, text='停止 & 退出', command=stop_close)
 ext.place(x=185, y=10)
@@ -209,5 +243,7 @@ icon = pystray.Icon("name", image, "开播提醒", menu)
 root.protocol('WM_DELETE_WINDOW', on_exit)
 threading.Thread(target=icon.run, name="stray", daemon=True).start()
 
-root.mainloop()
+if errorflag == 1:
+    tkmb.showwarning(title="警告", message="配置文件有误，已生成新配置文件，原配置内容可在同目录\"BLNback.txt\"中找到")
 
+root.mainloop()
