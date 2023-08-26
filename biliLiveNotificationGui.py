@@ -2,7 +2,8 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.messagebox as tkmb
 from retrying import retry
-from winotify import Notification, audio
+# from winotify import Notification, audio
+from win11toast import notify
 import time
 import pystray
 from pystray import MenuItem, Menu
@@ -19,6 +20,12 @@ import os
 byte_data = b64decode(explode)
 image_data = BytesIO(byte_data)
 image = Image.open(image_data)
+image.save(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
+toast_icon = {
+    'src': os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png',
+    'placement': 'appLogoOverride'
+}
+
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"}
 
@@ -41,12 +48,14 @@ try:
         api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
 except FileNotFoundError:
     with open("./BLN.ini", 'w') as fp:
-        fp.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n" + "roomID=" + "\n" + "timeInterval=60")
+        fp.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
+                 + "roomID=" + "\n" + "timeInterval=60")
     api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
 except AttributeError:
     with open("./BLN.ini", "w") as f1, open("./BLNback.txt", "w") as f2:
         f2.write(lst)
-        f1.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n" + "roomID=" + "\n" + "timeInterval=60")
+        f1.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
+                 + "roomID=" + "\n" + "timeInterval=60")
     api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
     errorflag = 1
 
@@ -66,19 +75,21 @@ def show_window():
 
 
 def quit_window():
+    os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
     root.destroy()
 
 
 def begin_listen():
     try:
-        with open("./BLN.ini", 'r+') as fp:
-            lst = fp.read()
-        roomIdStr = re.search("roomID=(.*)", lst).group(1)
+        with open("./BLN.ini", 'r+') as fl:
+            fl_text = fl.read()
+        roomIdStr = re.search("roomID=(.*)", fl_text).group(1)
         if roomIdStr == "":
             tkmb.showerror(title="错误", message="房间号为空，请进入设置界面进行设置！")
             raise RuntimeError("房间号为空")
         roomID = roomIdStr.split(',')
-        timeInterval = int(re.search("timeInterval=(.*)", lst).group(1))
+        # print(roomID)
+        timeInterval = int(re.search("timeInterval=(.*)", fl_text).group(1))
 
         stateStr.set("状态：监听中")
         root.withdraw()
@@ -99,6 +110,7 @@ def listen_thread():
 
 
 def stop_close():
+    os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
     root.destroy()
 
 
@@ -124,26 +136,32 @@ def listen_main(roomID, wait_time):
                     live_status = get_live_status(rid)
                     if live_status == 1:
                         if i == 0:
-                            toastL = Notification(app_id=" ",
+                            '''toastL = Notification(app_id="bilibili_Live_Notification",
                                                   title="bilibili_Live_Notification",
                                                   msg="开始监听")
                             toastL.set_audio(audio.Default, loop=False)
-                            toastL.show()
-                        toast = Notification(app_id=rid + "开播提醒",
+                            toastL.show()'''
+
+                            notify("bilibili_Live_Notification", "开始监听", icon=toast_icon)
+
+                        '''toastO = Notification(app_id=rid + "开播提醒",
                                              title=rid + "已经开播了",
                                              msg="已经开播了，点击打开直播间！ >>",
                                              launch="https://live.bilibili.com/" + rid)
-                        toast.set_audio(audio.Default, loop=False)
-                        toast.show()
+                        toastO.set_audio(audio.Default, loop=False)
+                        toastO.show()'''
+
+                        notify(rid + "开播提醒",
+                               rid + "已经开播了",
+                               icon=toast_icon,
+                               button={'activationType': 'protocol',
+                                       'arguments': "https://live.bilibili.com/" + rid,
+                                       'content': '打开直播间'})
                         roomID.remove(rid)
                         i += 1
                     else:
                         if i == 0:
-                            toastL = Notification(app_id=" ",
-                                                  title="bilibili_Live_Notification",
-                                                  msg="开始监听")
-                            toastL.set_audio(audio.Default, loop=False)
-                            toastL.show()
+                            notify("bilibili_Live_Notification", "开始监听", icon=toast_icon)
                         i += 1
                 except Exception as e:
                     ex = e
@@ -173,16 +191,16 @@ class SettingWindow(tk.Toplevel):
         x = (ws / 2) - (w / 2)
         y = (hs / 2) - (h / 2)
         self.geometry('%dx%d+%d+%d' % (w, h, x, y))
-        with open("./BLN.ini", 'r+') as fp:
-            lst = fp.read()
+        with open("./BLN.ini", 'r+') as fw:
+            fw_text = fw.read()
 
-        if re.search("roomID=(.*)", lst) == "":
+        if re.search("roomID=(.*)", fw_text) == "":
             self.idStr = ""
         else:
-            self.idStr = re.search("roomID=(.*)", lst).group(1)
+            self.idStr = re.search("roomID=(.*)", fw_text).group(1)
 
         # print(self.idStr)
-        self.timeInt = tk.StringVar(value=re.search("timeInterval=(.*)", lst).group(1))
+        self.timeInt = tk.StringVar(value=re.search("timeInterval=(.*)", fw_text).group(1))
         # print(self.timeInt.get())
 
         self.idText = tk.Text(self, width=50, height=3, relief=tk.SUNKEN)
@@ -205,12 +223,12 @@ class SettingWindow(tk.Toplevel):
 
     def save_setting(self):
         idStr = self.idText.get('0.0', tk.END).replace('，', ',').replace('\n', '')
-        print(idStr)
+        # print(idStr)
         timeIntStr = self.timeInt.get()
 
-        with open("./BLN.ini", "r") as f1, open("./BLN.tmp", "w") as f2:
-            strTmp = re.sub("roomID=(.*)", "roomID=" + idStr, f1.read())
-            f2.write(re.sub("timeInterval=(.*)", "timeInterval=" + timeIntStr, strTmp))
+        with open("./BLN.ini", "r") as f1s, open("./BLN.tmp", "w") as f2s:
+            strTmp = re.sub("roomID=(.*)", "roomID=" + idStr, f1s.read())
+            f2s.write(re.sub("timeInterval=(.*)", "timeInterval=" + timeIntStr, strTmp))
         os.remove("./BLN.ini")
         os.rename("./BLN.tmp", "BLN.ini")
 
