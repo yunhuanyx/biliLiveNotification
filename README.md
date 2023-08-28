@@ -15,5 +15,5 @@
 * 界面中的“X”会最小化到托盘  
 * 需要退出程序时请点击界面中的“停止 & 退出”按钮，或者右键托盘图标点击菜单中的“退出”  
 ## 通知效果如图所示
-![Snipaste_2023-08-28_19-48-01](https://github.com/yunhuanyx/biliLiveNotification/assets/95404593/bf7359ac-069b-459a-9b9c-4eec6325e1fb)
+![Snipaste_2023-08-28_19-48-01](https://github.com/yunhuanyx/biliLiveNotification/assets/95404593/bf7359ac-069b-459a-9b9c-4eec6325e1fb) 
 所用API均来自[bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)
