@@ -31,34 +31,6 @@ headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 errorflag = 0
 
-try:
-    with open("./BLN.ini", 'r+') as fp:
-        lst = fp.read()
-    matchObj = re.match("api=(.*)", lst)
-    st1 = re.search("roomID=(.*)", lst)
-    st2 = re.search("timeInterval=(.*)", lst)
-    if st1 is None or st2 is None:
-        raise AttributeError
-    api = matchObj.group(1)
-    if api == "":
-        with open("./BLN.ini", "r") as f1, open("./BLN.tmp", "w") as f2:
-            f2.write(re.sub("api=(.*)", "api=https://api.live.bilibili.com/room/v1/Room/room_init?id=", f1.read()))
-        os.remove("./BLN.ini")
-        os.rename("./BLN.tmp", "BLN.ini")
-        api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
-except FileNotFoundError:
-    with open("./BLN.ini", 'w') as fp:
-        fp.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
-                 + "roomID=" + "\n" + "timeInterval=60")
-    api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
-except AttributeError:
-    with open("./BLN.ini", "w") as f1, open("./BLNback.txt", "w") as f2:
-        f2.write(lst)
-        f1.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
-                 + "roomID=" + "\n" + "timeInterval=60")
-    api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
-    errorflag = 1
-
 
 def center_window(w, h):
     # 获取屏幕 宽、高
@@ -91,7 +63,7 @@ def begin_listen():
         # print(roomID)
         timeInterval = int(re.search("timeInterval=(.*)", fl_text).group(1))
 
-        stateStr.set("状态：监听中")
+        stateStr.set("状态：监听中，房间号为" + str(roomID))
         root.withdraw()
         listen.config(state=tk.DISABLED)
         try:
@@ -123,7 +95,36 @@ def get_live_status(roomid):
     url = api + roomid
     response = requests.get(url, headers=headers)
     assert response.status_code == 200
-    return response.json()['data']['live_status']
+    if response.json()['code'] != 0:
+        raise RuntimeError(roomid + '直播间不存在')
+    live_json = response.json()
+    return_dict = {
+        'live_status': live_json['data']['live_status'],
+        'uid': live_json['data']['uid']
+    }
+    return return_dict
+
+
+@retry(stop_max_attempt_number=3)
+def get_streamer_info(uid):
+    url = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + str(uid)
+    response = requests.get(url, headers=headers)
+    assert response.status_code == 200
+    streamer_json = response.json()
+    return_dict = {
+        'uname': streamer_json['data']['info']['uname'],
+        'face': streamer_json['data']['info']['face']
+    }
+    return return_dict
+
+
+def get_streamer_img(url, uid):
+    response = requests.get(url, headers=headers)
+    assert response.status_code == 200
+    uimg = Image.open(BytesIO(response.content))
+    uimg_src = os.path.dirname(os.path.abspath(__file__)) + '\\' + uid + '_tmp.png'
+    uimg.save(uimg_src)
+    return uimg_src
 
 
 def listen_main(roomID, wait_time):
@@ -133,7 +134,9 @@ def listen_main(roomID, wait_time):
         if len(roomID) != 0:
             for rid in roomID[::-1]:
                 try:
-                    live_status = get_live_status(rid)
+                    live_dict = get_live_status(rid)
+                    live_status = live_dict['live_status']
+                    uid = live_dict['uid']
                     if live_status == 1:
                         if i == 0:
                             '''toastL = Notification(app_id="bilibili_Live_Notification",
@@ -151,13 +154,23 @@ def listen_main(roomID, wait_time):
                         toastO.set_audio(audio.Default, loop=False)
                         toastO.show()'''
 
-                        notify(rid + "开播提醒",
-                               rid + "已经开播了",
-                               icon=toast_icon,
+                        uinfo_dict = get_streamer_info(uid)
+                        uname = uinfo_dict['uname']
+                        face = uinfo_dict['face']
+                        uimg_url = get_streamer_img(face, str(uid))
+                        notify(uname + "(" + rid + ")" + "开播提醒",
+                               uname + "(" + rid + ")" + "已经开播了",
+                               icon=uimg_url,
                                button={'activationType': 'protocol',
                                        'arguments': "https://live.bilibili.com/" + rid,
                                        'content': '打开直播间'})
+                        info_text.config(state=tk.NORMAL)
+                        info_text.insert(tk.END,
+                                         time.strftime("%m/%d-%H:%M", time.localtime()) + ' '
+                                         + uname + "(" + rid + ")" + "已开播" + '\n')
+                        info_text.config(state=tk.DISABLED)
                         roomID.remove(rid)
+                        stateStr.set("状态：监听中，房间号为" + str(roomID))
                         i += 1
                     else:
                         if i == 0:
@@ -240,7 +253,7 @@ class SettingWindow(tk.Toplevel):
 
 root = tk.Tk()
 root.title('B站开播提醒')
-center_window(285, 65)
+center_window(285, 145)
 root.resizable(False, False)
 root.protocol('WM_DELETE_WINDOW', root.iconify)
 ico_img = ImageTk.PhotoImage(data=byte_data)
@@ -253,7 +266,13 @@ ext = ttk.Button(root, text='停止 & 退出', command=stop_close)
 ext.place(x=185, y=10)
 ttk.Separator(root, orient=tk.HORIZONTAL).place(x=5, y=45, relwidth=0.97)
 stateStr = tk.StringVar(value="状态：空闲中")
-state = ttk.Label(root, textvariable=stateStr).place(x=10, y=46)
+state = ttk.Label(root, textvariable=stateStr, wraplength=265).place(x=10, y=46)
+
+info_scr = tk.Scrollbar(root)
+info_text = tk.Text(root, width=37, height=4, bd=1, yscrollcommand=info_scr.set, state=tk.DISABLED)
+info_scr.config(command=info_text.yview)
+info_scr.place(x=267, y=83, height=60)
+info_text.place(x=5, y=85)
 
 menu = (MenuItem('显示', show_window, default=True), Menu.SEPARATOR, MenuItem('退出', quit_window))
 icon = pystray.Icon("name", image, "开播提醒", menu)
@@ -261,7 +280,37 @@ icon = pystray.Icon("name", image, "开播提醒", menu)
 root.protocol('WM_DELETE_WINDOW', on_exit)
 threading.Thread(target=icon.run, name="stray", daemon=True).start()
 
+
+try:
+    with open("./BLN.ini", 'r+') as fp:
+        lst = fp.read()
+    matchObj = re.match("api=(.*)", lst)
+    st1 = re.search("roomID=(.*)", lst)
+    st2 = re.search("timeInterval=(.*)", lst)
+    if st1 is None or st2 is None:
+        raise AttributeError
+    api = matchObj.group(1)
+    if api == "":
+        with open("./BLN.ini", "r") as f1, open("./BLN.tmp", "w") as f2:
+            f2.write(re.sub("api=(.*)", "api=https://api.live.bilibili.com/room/v1/Room/room_init?id=", f1.read()))
+        os.remove("./BLN.ini")
+        os.rename("./BLN.tmp", "BLN.ini")
+        api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
+except FileNotFoundError:
+    with open("./BLN.ini", 'w') as fp:
+        fp.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
+                 + "roomID=" + "\n" + "timeInterval=60")
+    api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
+except AttributeError:
+    with open("./BLN.ini", "w") as f1, open("./BLNback.txt", "w") as f2:
+        f2.write(lst)
+        f1.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
+                 + "roomID=" + "\n" + "timeInterval=60")
+    api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
+    errorflag = 1
+
 if errorflag == 1:
     tkmb.showwarning(title="警告", message="配置文件有误，已生成新配置文件，原配置内容可在同目录\"BLNback.txt\"中找到")
+
 
 root.mainloop()
