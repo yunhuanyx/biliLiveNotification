@@ -1,6 +1,10 @@
 import tkinter as tk
-import tkinter.ttk as ttk
-import tkinter.messagebox as tkmb
+# import tkinter.ttk as ttk
+import ttkbootstrap as ttk
+# import tkinter.messagebox as tkmb
+import ttkbootstrap.dialogs.dialogs as tkmb
+import tkinter.font as tkfont
+import webbrowser
 from retrying import retry
 # from winotify import Notification, audio
 from win11toast import notify
@@ -25,11 +29,16 @@ toast_icon = {
     'src': os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png',
     'placement': 'appLogoOverride'
 }
-
+uid_img = []
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"}
 
-errorflag = 0
+error_flag = 0
+
+version = "v1.3.1"
+
+listen_button_flag = 0
+pause_flag = False
 
 
 def center_window(w, h):
@@ -48,6 +57,8 @@ def show_window():
 
 def quit_window():
     os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
+    for uid in uid_img:
+        os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\' + uid + '_tmp.png')
     root.destroy()
 
 
@@ -57,7 +68,7 @@ def begin_listen():
             fl_text = fl.read()
         roomIdStr = re.search("roomID=(.*)", fl_text).group(1)
         if roomIdStr == "":
-            tkmb.showerror(title="错误", message="房间号为空，请进入设置界面进行设置！")
+            root.after(0, lambda: tkmb.Messagebox.show_error(title="错误", message="房间号为空，请进入设置界面进行设置！"))
             raise RuntimeError("房间号为空")
         roomID = roomIdStr.split(',')
         # print(roomID)
@@ -65,7 +76,9 @@ def begin_listen():
 
         stateStr.set("状态：监听中，房间号为" + str(roomID))
         root.withdraw()
-        listen.config(state=tk.DISABLED)
+        listen.configure(text="暂停监听", bootstyle="warning-outline-toolbutton")
+        global listen_button_flag
+        listen_button_flag = 1
         try:
             listen_main(roomID, timeInterval)
         except:
@@ -73,17 +86,69 @@ def begin_listen():
             stateStr.set("状态：空闲中")
             raise RuntimeError("监听结束")
     except OSError:
-        tkmb.showerror(title="错误", message="未找到配置文件，请进入设置界面进行设置！")
+        root.after(0, lambda: tkmb.Messagebox.show_error(title="错误", message="未找到配置文件，请进入设置界面进行设置！"))
         raise OSError("未找到文件")
 
 
 def listen_thread():
-    threading.Thread(target=begin_listen, name="listen", daemon=True).start()
+    global pause_flag
+    global listen_button_flag
+    if listen_button_flag == 0:
+        threading.Thread(target=begin_listen, name="listen", daemon=True).start()
+    elif listen_button_flag == 1:
+        pause_flag = True
+        pause_event.clear()
+        listen.configure(text="恢复监听", bootstyle="outline-toolbutton")
+        info_text.config(state=tk.NORMAL)
+        info_text.insert(tk.END,
+                         time.strftime("%m-%d %H:%M:%S", time.localtime()) + '   '
+                         + "已暂停监听" + '\n')
+        info_text.config(state=tk.DISABLED)
+        listen_button_flag = 2
+    else:
+        pause_flag = False
+        pause_event.set()
+        listen.configure(text="暂停监听", bootstyle="warning-outline-toolbutton")
+        info_text.config(state=tk.NORMAL)
+        info_text.insert(tk.END,
+                         time.strftime("%m-%d %H:%M:%S", time.localtime()) + '   '
+                         + "已恢复监听" + '\n')
+        info_text.config(state=tk.DISABLED)
+        listen_button_flag = 1
 
 
 def stop_close():
-    os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
-    root.destroy()
+    ext_yno = tkmb.Messagebox.yesno(title="退出程序", message="确定退出程序吗？", alert=True)
+    if ext_yno:
+        os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
+        for uid in uid_img:
+            os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\' + uid + '_tmp.png')
+        root.destroy()
+
+
+'''
+def stop_listen():
+    global pause_flag
+    pause_flag = True
+    pause_event.clear()
+    update.config(state=tk.DISABLED)
+    listen.config(state=tk.NORMAL)
+    global listen_button_flag
+    listen_button_flag = 2
+'''
+
+
+def check_update():
+    release_ver = requests.get('https://api.github.com/repos/yunhuanyx/biliLiveNotification/releases/latest').json()['tag_name']
+    if version < release_ver:
+        update_yon = tkmb.Messagebox.yesno(title="提示",
+                                           message="当前版本为" + version
+                                                   + ",\n有新版本" + release_ver + "可更新\n是否前往发布页?",
+                                           alert=True)
+        if update_yon:
+            webbrowser.open("https://github.com/yunhuanyx/biliLiveNotification/releases")
+    else:
+        tkmb.Messagebox.show_info(title="已是最新版本", message="当前已是最新版本", alert=True)
 
 
 def on_exit():
@@ -131,6 +196,9 @@ def listen_main(roomID, wait_time):
     i = 0
     ex = ""
     while True:
+        if pause_flag:
+            # 线程暂停
+            pause_event.wait()
         if len(roomID) != 0:
             for rid in roomID[::-1]:
                 try:
@@ -166,9 +234,10 @@ def listen_main(roomID, wait_time):
                                        'content': '打开直播间'})
                         info_text.config(state=tk.NORMAL)
                         info_text.insert(tk.END,
-                                         time.strftime("%m/%d-%H:%M", time.localtime()) + ' '
+                                         time.strftime("%m-%d %H:%M", time.localtime()) + '   '
                                          + uname + "(" + rid + ")" + "已开播" + '\n')
                         info_text.config(state=tk.DISABLED)
+                        uid_img.append(str(uid))
                         roomID.remove(rid)
                         stateStr.set("状态：监听中，房间号为" + str(roomID))
                         i += 1
@@ -178,7 +247,10 @@ def listen_main(roomID, wait_time):
                         i += 1
                 except Exception as e:
                     ex = e
-                    print(e)
+                    info_text.config(state=tk.NORMAL)
+                    info_text.insert(tk.END, str(e) + '\n')
+                    info_text.config(state=tk.DISABLED)
+                    # print(e)
 
             if ex != "":
                 ex = ""
@@ -226,9 +298,9 @@ class SettingWindow(tk.Toplevel):
 
         ttk.Label(self, text="房间号——用\",\"隔开（例：213,77386）").place(x=20, y=10)
 
-        timeEntry = tk.Entry(self, width=7, justify=tk.CENTER, textvariable=self.timeInt)
-        timeEntry.place(x=150, y=100)
-        ttk.Label(self, text="监听间隔（单位：秒）").place(x=20, y=100)
+        timeEntry = ttk.Entry(self, width=7, justify=tk.CENTER, textvariable=self.timeInt)
+        timeEntry.place(x=150, y=105)
+        ttk.Label(self, text="监听间隔（单位：秒）").place(x=20, y=108)
         saveSetting = ttk.Button(self, text='保存', command=self.save_setting)
         saveSetting.place(x=90, y=150)
         cancelSet = ttk.Button(self, text='取消并关闭', command=self.cancel_setting)
@@ -252,26 +324,31 @@ class SettingWindow(tk.Toplevel):
 
 
 root = tk.Tk()
-root.title('B站开播提醒')
-center_window(285, 145)
+
+root.title('B站开播提醒'+version)
+center_window(340, 180)
 root.resizable(False, False)
 root.protocol('WM_DELETE_WINDOW', root.iconify)
 ico_img = ImageTk.PhotoImage(data=byte_data)
 root.iconphoto(True, ico_img)
-listen = ttk.Button(root, text='开始监听', command=listen_thread)
-listen.place(x=15, y=10)
-config = ttk.Button(root, text='设置', width=7, command=SettingWindow)
-config.place(x=115, y=10)
-ext = ttk.Button(root, text='停止 & 退出', command=stop_close)
-ext.place(x=185, y=10)
+listen = ttk.Button(root, text='开始监听', width=8, command=listen_thread, bootstyle="outline-toolbutton")
+listen.place(x=10, y=10)
+config = ttk.Button(root, text='设置', width=6, command=SettingWindow, bootstyle="info-outline-toolbutton")
+config.place(x=95, y=10)
+update = ttk.Button(root, text='检查更新', width=7, command=check_update, bootstyle="outline-toolbutton")
+update.place(x=165, y=10)
+ext = ttk.Button(root, text='停止 & 退出', command=stop_close, bootstyle="danger-outline-toolbutton")
+ext.place(x=242, y=10)
 ttk.Separator(root, orient=tk.HORIZONTAL).place(x=5, y=45, relwidth=0.97)
 stateStr = tk.StringVar(value="状态：空闲中")
-state = ttk.Label(root, textvariable=stateStr, wraplength=265).place(x=10, y=46)
+state = ttk.Label(root, textvariable=stateStr, wraplength=320).place(x=10, y=46)
 
-info_scr = tk.Scrollbar(root)
-info_text = tk.Text(root, width=37, height=4, bd=1, yscrollcommand=info_scr.set, state=tk.DISABLED)
+info_scr = ttk.Scrollbar(root, bootstyle="round")
+info_text = tk.Text(root, width=38, height=4, bd=1,
+                    font=tkfont.Font(family="Microsoft YaHei", size=10),
+                    yscrollcommand=info_scr.set, state=tk.DISABLED)
 info_scr.config(command=info_text.yview)
-info_scr.place(x=267, y=83, height=60)
+info_scr.place(x=326, y=84, height=92)
 info_text.place(x=5, y=85)
 
 menu = (MenuItem('显示', show_window, default=True), Menu.SEPARATOR, MenuItem('退出', quit_window))
@@ -280,6 +357,7 @@ icon = pystray.Icon("name", image, "开播提醒", menu)
 root.protocol('WM_DELETE_WINDOW', on_exit)
 threading.Thread(target=icon.run, name="stray", daemon=True).start()
 
+pause_event = threading.Event()
 
 try:
     with open("./BLN.ini", 'r+') as fp:
@@ -307,10 +385,10 @@ except AttributeError:
         f1.write("api=https://api.live.bilibili.com/room/v1/Room/room_init?id=" + "\n"
                  + "roomID=" + "\n" + "timeInterval=60")
     api = "https://api.live.bilibili.com/room/v1/Room/room_init?id="
-    errorflag = 1
+    error_flag = 1
 
-if errorflag == 1:
-    tkmb.showwarning(title="警告", message="配置文件有误，已生成新配置文件，原配置内容可在同目录\"BLNback.txt\"中找到")
+if error_flag == 1:
+    tkmb.Messagebox.show_warning(title="警告", message="配置文件有误，已生成新配置文件，原配置内容可在同目录\"BLNback.txt\"中找到")
 
 
 root.mainloop()
