@@ -39,6 +39,7 @@ version = "v1.3.1"
 
 listen_button_flag = 0
 pause_flag = False
+stop_flag = False
 
 
 def center_window(w, h):
@@ -46,8 +47,8 @@ def center_window(w, h):
     ws = root.winfo_screenwidth()
     hs = root.winfo_screenheight()
     # 计算 x, y 位置
-    x = (ws/2) - (w/2)
-    y = (hs/2) - (h/2)
+    x = (ws/2) - (w/2) - 20
+    y = (hs/2) - (h/2) - 20
     root.geometry('%dx%d+%d+%d' % (w, h, x, y))
 
 
@@ -81,10 +82,19 @@ def begin_listen():
         listen_button_flag = 1
         try:
             listen_main(roomID, timeInterval)
-        except:
-            listen.config(state=tk.NORMAL)
+        except Exception as e:
+            listen.configure(text='开始监听', bootstyle="outline-toolbutton")
+            listen_button_flag = 0
             stateStr.set("状态：空闲中")
-            raise RuntimeError("监听结束")
+            global stop_flag
+            stop_flag = False
+            wait_event.clear()
+            info_text.config(state=tk.NORMAL)
+            info_text.insert(tk.END,
+                             time.strftime("%m-%d %H:%M:%S", time.localtime()) + '   '
+                             + str(e) + '\n')
+            info_text.config(state=tk.DISABLED)
+            info_text.see(tk.END)
     except OSError:
         root.after(0, lambda: tkmb.Messagebox.show_error(title="错误", message="未找到配置文件，请进入设置界面进行设置！"))
         raise OSError("未找到文件")
@@ -94,26 +104,32 @@ def listen_thread():
     global pause_flag
     global listen_button_flag
     if listen_button_flag == 0:
+        stopl.configure(state="normal")
         threading.Thread(target=begin_listen, name="listen", daemon=True).start()
     elif listen_button_flag == 1:
         pause_flag = True
         pause_event.clear()
+        wait_event.set()
         listen.configure(text="恢复监听", bootstyle="outline-toolbutton")
-        info_text.config(state=tk.NORMAL)
+        stopl.configure(state="disable")
+        """info_text.config(state=tk.NORMAL)
         info_text.insert(tk.END,
                          time.strftime("%m-%d %H:%M:%S", time.localtime()) + '   '
                          + "已暂停监听" + '\n')
         info_text.config(state=tk.DISABLED)
+        info_text.see(tk.END)"""
         listen_button_flag = 2
     else:
         pause_flag = False
         pause_event.set()
         listen.configure(text="暂停监听", bootstyle="warning-outline-toolbutton")
+        stopl.configure(state="normal")
         info_text.config(state=tk.NORMAL)
         info_text.insert(tk.END,
                          time.strftime("%m-%d %H:%M:%S", time.localtime()) + '   '
                          + "已恢复监听" + '\n')
         info_text.config(state=tk.DISABLED)
+        info_text.see(tk.END)
         listen_button_flag = 1
 
 
@@ -126,16 +142,13 @@ def stop_close():
         root.destroy()
 
 
-'''
 def stop_listen():
-    global pause_flag
-    pause_flag = True
-    pause_event.clear()
-    update.config(state=tk.DISABLED)
-    listen.config(state=tk.NORMAL)
+    global stop_flag
+    stop_flag = True
+    wait_event.set()
     global listen_button_flag
-    listen_button_flag = 2
-'''
+    listen_button_flag = 0
+    stopl.configure(state="disable")
 
 
 def check_update():
@@ -196,8 +209,16 @@ def listen_main(roomID, wait_time):
     i = 0
     ex = ""
     while True:
+        if stop_flag:
+            raise RuntimeError("停止监听")
         if pause_flag:
-            # 线程暂停
+            info_text.config(state=tk.NORMAL)
+            info_text.insert(tk.END,
+                             time.strftime("%m-%d %H:%M:%S", time.localtime()) + '   '
+                             + "已暂停监听" + '\n')
+            info_text.config(state=tk.DISABLED)
+            info_text.see(tk.END)
+            wait_event.clear()
             pause_event.wait()
         if len(roomID) != 0:
             for rid in roomID[::-1]:
@@ -237,7 +258,9 @@ def listen_main(roomID, wait_time):
                                          time.strftime("%m-%d %H:%M", time.localtime()) + '   '
                                          + uname + "(" + rid + ")" + "已开播" + '\n')
                         info_text.config(state=tk.DISABLED)
-                        uid_img.append(str(uid))
+                        info_text.see(tk.END)
+                        if str(uid) not in uid_img:
+                            uid_img.append(str(uid))
                         roomID.remove(rid)
                         stateStr.set("状态：监听中，房间号为" + str(roomID))
                         i += 1
@@ -250,14 +273,17 @@ def listen_main(roomID, wait_time):
                     info_text.config(state=tk.NORMAL)
                     info_text.insert(tk.END, str(e) + '\n')
                     info_text.config(state=tk.DISABLED)
+                    info_text.see(tk.END)
                     # print(e)
 
+            if stop_flag:
+                raise RuntimeError("停止监听")
             if ex != "":
                 ex = ""
-                time.sleep(5)
+                wait_event.wait(5)
                 continue
             if len(roomID) != 0:
-                time.sleep(wait_time)
+                wait_event.wait(wait_time)
             else:
                 raise RuntimeError("监听结束")
         else:
@@ -273,8 +299,8 @@ class SettingWindow(tk.Toplevel):
         hs = root.winfo_screenheight()
         w = 400
         h = 200
-        x = (ws / 2) - (w / 2)
-        y = (hs / 2) - (h / 2)
+        x = (ws / 2) - (w / 2) - 20
+        y = (hs / 2) - (h / 2) - 20
         self.geometry('%dx%d+%d+%d' % (w, h, x, y))
         with open("./BLN.ini", 'r+') as fw:
             fw_text = fw.read()
@@ -326,30 +352,32 @@ class SettingWindow(tk.Toplevel):
 root = tk.Tk()
 
 root.title('B站开播提醒'+version)
-center_window(340, 180)
+center_window(395, 200)
 root.resizable(False, False)
 root.protocol('WM_DELETE_WINDOW', root.iconify)
 ico_img = ImageTk.PhotoImage(data=byte_data)
 root.iconphoto(True, ico_img)
 listen = ttk.Button(root, text='开始监听', width=8, command=listen_thread, bootstyle="outline-toolbutton")
 listen.place(x=10, y=10)
+stopl = ttk.Button(root, text='停止监听', width=7, command=stop_listen, state="disable", bootstyle="danger-outline-toolbutton")
+stopl.place(x=95, y=10)
 config = ttk.Button(root, text='设置', width=6, command=SettingWindow, bootstyle="info-outline-toolbutton")
-config.place(x=95, y=10)
+config.place(x=172, y=10)
 update = ttk.Button(root, text='检查更新', width=7, command=check_update, bootstyle="outline-toolbutton")
-update.place(x=165, y=10)
-ext = ttk.Button(root, text='停止 & 退出', command=stop_close, bootstyle="danger-outline-toolbutton")
-ext.place(x=242, y=10)
+update.place(x=242, y=10)
+ext = ttk.Button(root, text='退出', width=6, command=stop_close, bootstyle="danger-outline-toolbutton")
+ext.place(x=319, y=10)
 ttk.Separator(root, orient=tk.HORIZONTAL).place(x=5, y=45, relwidth=0.97)
 stateStr = tk.StringVar(value="状态：空闲中")
-state = ttk.Label(root, textvariable=stateStr, wraplength=320).place(x=10, y=46)
+state = ttk.Label(root, textvariable=stateStr, wraplength=410).place(x=10, y=46)
 
 info_scr = ttk.Scrollbar(root, bootstyle="round")
-info_text = tk.Text(root, width=38, height=4, bd=1,
+info_text = tk.Text(root, width=44, height=5, bd=1,
                     font=tkfont.Font(family="Microsoft YaHei", size=10),
                     yscrollcommand=info_scr.set, state=tk.DISABLED)
 info_scr.config(command=info_text.yview)
-info_scr.place(x=326, y=84, height=92)
-info_text.place(x=5, y=85)
+info_scr.place(x=380, y=84, height=111)
+info_text.place(x=9, y=85)
 
 menu = (MenuItem('显示', show_window, default=True), Menu.SEPARATOR, MenuItem('退出', quit_window))
 icon = pystray.Icon("name", image, "开播提醒", menu)
@@ -358,6 +386,8 @@ root.protocol('WM_DELETE_WINDOW', on_exit)
 threading.Thread(target=icon.run, name="stray", daemon=True).start()
 
 pause_event = threading.Event()
+wait_event = threading.Event()
+
 
 try:
     with open("./BLN.ini", 'r+') as fp:
