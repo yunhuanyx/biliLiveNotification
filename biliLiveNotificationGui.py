@@ -1,6 +1,7 @@
 import tkinter as tk
 import ttkbootstrap as ttk
 import ttkbootstrap.dialogs.dialogs as tkmb
+from ttkbootstrap.tableview import Tableview
 import tkinter.font as tkfont
 import webbrowser
 from retrying import retry
@@ -32,7 +33,7 @@ headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 error_flag = 0
 
-version = "v1.3.2"
+version = "v1.3.3"
 
 listen_button_flag = 0
 pause_flag = False
@@ -76,7 +77,7 @@ def begin_listen():
         # print(roomID_dic)
         timeInterval = int(re.search("timeInterval=(.*)", fl_text).group(1))
 
-        stateStr.set("状态：监听中，房间号为" + str(roomID))
+        stateStr.set("状态：监听中")
         root.withdraw()
         listen.configure(text="暂停监听", bootstyle="warning-outline-toolbutton")
         global listen_button_flag
@@ -136,7 +137,7 @@ def listen_thread():
 
 def stop_close():
     ext_yno = tkmb.Messagebox.yesno(title="退出程序", message="确定退出程序吗？", alert=True)
-    if ext_yno == 'Yes' or "确认":
+    if ext_yno == 'Yes' or ext_yno == "确认":
         os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\imagetmp.png')
         for uid in uid_img:
             os.remove(os.path.dirname(os.path.abspath(__file__)) + '\\' + uid + '_tmp.png')
@@ -170,12 +171,12 @@ def on_exit():
 
 
 @retry(stop_max_attempt_number=5)
-def get_live_status(roomid):
-    url = api + roomid
+def get_live_status(rid):
+    url = api + rid
     response = requests.get(url, headers=headers)
     assert response.status_code == 200
     if response.json()['code'] != 0:
-        raise RuntimeError(roomid + '直播间不存在')
+        raise RuntimeError(rid + '直播间不存在')
     live_json = response.json()
     return_dict = {
         'live_status': live_json['data']['live_status'],
@@ -209,6 +210,7 @@ def get_streamer_img(url, uid):
 def listen_main(roomID, roomID_dic, wait_time):
     i = 0
     ex = ""
+    global rowdata
     while True:
         if stop_flag:
             raise RuntimeError("停止监听")
@@ -225,16 +227,29 @@ def listen_main(roomID, roomID_dic, wait_time):
 
         for rid in roomID[::-1]:
             try:
-                live_dict = get_live_status(rid)
-                live_status = live_dict['live_status']
-                uid = live_dict['uid']
+                live_info_dict = get_live_status(rid)
+                live_status = live_info_dict['live_status']
+                # uid = live_info_dict['uid']
                 if live_status == 1:
                     if i == 0:
                         notify("bilibili_Live_Notification", "开始监听", icon=toast_icon)
                     if roomID_dic[rid] is False:
-                        uinfo_dict = get_streamer_info(uid)
-                        uname = uinfo_dict['uname']
-                        face = uinfo_dict['face']
+                        # uinfo_dict = get_streamer_info(uid)
+                        # uname = uinfo_dict['uname']
+                        # face = uinfo_dict['face']
+                        rowdatat = []
+                        for row in rowdata:
+                            if row[1] == rid:
+                                rowt = (streamer_info[rid]['uname'], rid, "直播中")
+                                rowdatat.append(rowt)
+                            else:
+                                rowdatat.append(row)
+                        rowdata = rowdatat
+                        live_status_tab.build_table_data(coldata=coldata, rowdata=rowdata)
+                        live_status_tab.reset_table()
+                        uname = streamer_info[rid]['uname']
+                        uid = streamer_info[rid]['uid']
+                        face = streamer_info[rid]['face']
                         uimg_url = get_streamer_img(face, str(uid))
                         notify(uname + "(" + rid + ")" + "开播提醒",
                                uname + "(" + rid + ")" + "已经开播了",
@@ -257,8 +272,19 @@ def listen_main(roomID, roomID_dic, wait_time):
                     if i == 0:
                         notify("bilibili_Live_Notification", "开始监听", icon=toast_icon)
                     if roomID_dic[rid] is True:
-                        uinfo_dict = get_streamer_info(uid)
-                        uname = uinfo_dict['uname']
+                        # uinfo_dict = get_streamer_info(uid)
+                        # uname = uinfo_dict['uname']
+                        rowdatat = []
+                        for row in rowdata:
+                            if row[1] == rid:
+                                rowt = (streamer_info[rid]['uname'], rid, "未开播")
+                                rowdatat.append(rowt)
+                            else:
+                                rowdatat.append(row)
+                        rowdata = rowdatat
+                        live_status_tab.build_table_data(coldata=coldata, rowdata=rowdata)
+                        live_status_tab.reset_table()
+                        uname = streamer_info[rid]['uname']
                         info_text.config(state=tk.NORMAL)
                         info_text.insert(tk.END,
                                          time.strftime("%m-%d %H:%M", time.localtime()) + '   '
@@ -282,87 +308,6 @@ def listen_main(roomID, roomID_dic, wait_time):
             wait_event.wait(5)
             continue
         wait_event.wait(wait_time)
-        """if len(roomID) != 0:
-            for rid in roomID[::-1]:
-                try:
-                    live_dict = get_live_status(rid)
-                    live_status = live_dict['live_status']
-                    uid = live_dict['uid']
-                    if live_status == 1:
-                        if i == 0:
-                            '''toastL = Notification(app_id="bilibili_Live_Notification",
-                                                  title="bilibili_Live_Notification",
-                                                  msg="开始监听")
-                            toastL.set_audio(audio.Default, loop=False)
-                            toastL.show()'''
-
-                            notify("bilibili_Live_Notification", "开始监听", icon=toast_icon)
-
-                        '''toastO = Notification(app_id=rid + "开播提醒",
-                                             title=rid + "已经开播了",
-                                             msg="已经开播了，点击打开直播间！ >>",
-                                             launch="https://live.bilibili.com/" + rid)
-                        toastO.set_audio(audio.Default, loop=False)
-                        toastO.show()'''
-
-                        if roomID_dic[rid] is False:
-                            uinfo_dict = get_streamer_info(uid)
-                            uname = uinfo_dict['uname']
-                            face = uinfo_dict['face']
-                            uimg_url = get_streamer_img(face, str(uid))
-                            notify(uname + "(" + rid + ")" + "开播提醒",
-                                   uname + "(" + rid + ")" + "已经开播了",
-                                   icon=uimg_url,
-                                   button={'activationType': 'protocol',
-                                           'arguments': "https://live.bilibili.com/" + rid,
-                                           'content': '打开直播间'})
-                            info_text.config(state=tk.NORMAL)
-                            info_text.insert(tk.END,
-                                             time.strftime("%m-%d %H:%M", time.localtime()) + '   '
-                                             + uname + "(" + rid + ")" + "已开播" + '\n')
-                            info_text.config(state=tk.DISABLED)
-                            info_text.see(tk.END)
-                            if str(uid) not in uid_img:
-                                uid_img.append(str(uid))
-                            # roomID.remove(rid)
-                            # stateStr.set("状态：监听中，房间号为" + str(roomID))
-                            roomID_dic[rid] = True
-
-                        i += 1
-                    else:
-                        if i == 0:
-                            notify("bilibili_Live_Notification", "开始监听", icon=toast_icon)
-                        if roomID_dic[rid] is True:
-                            uinfo_dict = get_streamer_info(uid)
-                            uname = uinfo_dict['uname']
-                            info_text.config(state=tk.NORMAL)
-                            info_text.insert(tk.END,
-                                             time.strftime("%m-%d %H:%M", time.localtime()) + '   '
-                                             + uname + "(" + rid + ")" + "已下播" + '\n')
-                            info_text.config(state=tk.DISABLED)
-                            info_text.see(tk.END)
-                            roomID_dic[rid] = False
-                        i += 1
-                except Exception as e:
-                    ex = e
-                    info_text.config(state=tk.NORMAL)
-                    info_text.insert(tk.END, str(e) + '\n')
-                    info_text.config(state=tk.DISABLED)
-                    info_text.see(tk.END)
-                    # print(e)
-
-            if stop_flag:
-                raise RuntimeError("停止监听")
-            if ex != "":
-                ex = ""
-                wait_event.wait(5)
-                continue
-            if len(roomID) != 0:
-                wait_event.wait(wait_time)
-            else:
-                raise RuntimeError("监听结束")
-        else:
-            raise RuntimeError("监听结束")"""
 
 
 class SettingWindow(tk.Toplevel):
@@ -412,12 +357,42 @@ class SettingWindow(tk.Toplevel):
         # print(idStr)
         timeIntStr = self.timeInt.get()
 
-        with open("./BLN.ini", "r") as f1s, open("./BLN.tmp", "w") as f2s:
-            strTmp = re.sub("roomID=(.*)", "roomID=" + idStr, f1s.read())
-            f2s.write(re.sub("timeInterval=(.*)", "timeInterval=" + timeIntStr, strTmp))
-        os.remove("./BLN.ini")
-        os.rename("./BLN.tmp", "BLN.ini")
+        roomID = idStr.split(',')
+        rowdatat = []
+        flag2 = 0
+        try:
+            for rid in roomID:
+                live_dict = get_live_status(rid)
+                uinfo_dict = get_streamer_info(live_dict['uid'])
+                streamer_info[rid] = {
+                    'uid': live_dict['uid'],
+                    'uname': uinfo_dict['uname'],
+                    'face': uinfo_dict['face']
+                }
+                if live_dict['live_status'] == 1:
+                    rowt = (streamer_info[rid]['uname'], rid, '直播中')
+                else:
+                    rowt = (streamer_info[rid]['uname'], rid, '未开播')
+                rowdatat.append(rowt)
+            live_status_tab.build_table_data(coldata=coldata, rowdata=rowdatat)
+            live_status_tab.reset_table()
 
+        except Exception as e:
+            stre = str(e)
+            flag2 = 1
+            root.after(0, lambda: tkmb.Messagebox.show_error(title="错误", message=stre))
+
+        if flag2 == 0:
+            with open("./BLN.ini", "r") as f1s, open("./BLN.tmp", "w") as f2s:
+                strTmp = re.sub("roomID=(.*)", "roomID=" + idStr, f1s.read())
+                f2s.write(re.sub("timeInterval=(.*)", "timeInterval=" + timeIntStr, strTmp))
+            os.remove("./BLN.ini")
+            os.rename("./BLN.tmp", "BLN.ini")
+            if listen_button_flag == 1:
+                stop_listen()
+            elif listen_button_flag == 2:
+                listen_thread()
+                stop_listen()
         self.destroy()
 
     def cancel_setting(self):
@@ -427,7 +402,7 @@ class SettingWindow(tk.Toplevel):
 root = tk.Tk()
 
 root.title('B站开播提醒'+version)
-center_window(395, 200)
+center_window(395, 355)
 root.resizable(False, False)
 root.protocol('WM_DELETE_WINDOW', root.iconify)
 ico_img = ImageTk.PhotoImage(data=byte_data)
@@ -451,17 +426,8 @@ info_text = tk.Text(root, width=44, height=5, bd=1,
                     font=tkfont.Font(family="Microsoft YaHei", size=10),
                     yscrollcommand=info_scr.set, state=tk.DISABLED)
 info_scr.config(command=info_text.yview)
-info_scr.place(x=380, y=84, height=111)
-info_text.place(x=9, y=85)
-
-menu = (MenuItem('显示', show_window, default=True), Menu.SEPARATOR, MenuItem('退出', quit_window))
-icon = pystray.Icon("name", image, "开播提醒", menu)
-
-root.protocol('WM_DELETE_WINDOW', on_exit)
-threading.Thread(target=icon.run, name="stray", daemon=True).start()
-
-pause_event = threading.Event()
-wait_event = threading.Event()
+info_scr.place(x=380, y=68, height=111)
+info_text.place(x=9, y=67)
 
 
 try:
@@ -494,6 +460,54 @@ except AttributeError:
 
 if error_flag == 1:
     tkmb.Messagebox.show_warning(title="警告", message="配置文件有误，已生成新配置文件，原配置内容可在同目录\"BLNback.txt\"中找到")
+
+
+streamer_info = {}
+with open("./BLN.ini", 'r+') as ft:
+    ft_text = ft.read()
+roomIdStrTab = re.search("roomID=(.*)", ft_text).group(1)
+if roomIdStrTab == "":
+    rowdata = []
+else:
+    rowdata = []
+    roomId = roomIdStrTab.split(',')
+    try:
+        for roomid in roomId:
+            live_rtn = get_live_status(roomid)
+            uinfo_rtn = get_streamer_info(live_rtn['uid'])
+            if live_rtn['live_status'] == 1:
+                live_stat = '直播中'
+            else:
+                live_stat = '未开播'
+            tut = (uinfo_rtn['uname'], roomid, live_stat)
+            rowdata.append(tut)
+            streamer_info[roomid] = {
+                'uid': live_rtn['uid'],
+                'uname': uinfo_rtn['uname'],
+                'face': uinfo_rtn['face']
+            }
+    except Exception as exc:
+        strexc = str(exc)
+        root.after(0, lambda: tkmb.Messagebox.show_error(title="错误", message=strexc))
+
+
+coldata = [
+    {'text': "主播", 'anchor': "w", 'width': 137, 'minwidth': 137},
+    {'text': "房间号", 'anchor': "center", 'width': 120, 'minwidth': 120},
+    {'text': "直播状态", 'anchor': "center", 'width': 120, 'minwidth': 120}
+]
+live_status_tab = Tableview(master=root, coldata=coldata, rowdata=rowdata,
+                            autoalign=False, height=5, pagesize=5, paginated=True)
+live_status_tab.place(x=7, y=182)
+
+menu = (MenuItem('显示', show_window, default=True), Menu.SEPARATOR, MenuItem('退出', quit_window))
+icon = pystray.Icon("name", image, "开播提醒", menu)
+
+root.protocol('WM_DELETE_WINDOW', on_exit)
+threading.Thread(target=icon.run, name="stray", daemon=True).start()
+
+pause_event = threading.Event()
+wait_event = threading.Event()
 
 
 root.mainloop()
