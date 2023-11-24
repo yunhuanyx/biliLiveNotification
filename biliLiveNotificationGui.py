@@ -30,10 +30,11 @@ toast_icon = {
 uid_img = []
 
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"}
+proxies = {"http": None, "https": None}
 
 error_flag = 0
 
-version = "v1.3.3"
+version = "v1.3.4"
 
 listen_button_flag = 0
 pause_flag = False
@@ -154,7 +155,7 @@ def stop_listen():
 
 
 def check_update():
-    release_ver = requests.get('https://api.github.com/repos/yunhuanyx/biliLiveNotification/releases/latest').json()['tag_name']
+    release_ver = requests.get('https://api.github.com/repos/yunhuanyx/biliLiveNotification/releases/latest', proxies=proxies).json()['tag_name']
     if version < release_ver:
         update_yon = tkmb.Messagebox.yesno(title="提示",
                                            message="当前版本为" + version
@@ -170,10 +171,10 @@ def on_exit():
     root.withdraw()
 
 
-@retry(stop_max_attempt_number=5)
+@retry(stop_max_attempt_number=3)
 def get_live_status(rid):
     url = api + rid
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, proxies=proxies)
     assert response.status_code == 200
     if response.json()['code'] != 0:
         raise RuntimeError(rid + '直播间不存在')
@@ -188,7 +189,7 @@ def get_live_status(rid):
 @retry(stop_max_attempt_number=3)
 def get_streamer_info(uid):
     url = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=" + str(uid)
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, proxies=proxies)
     assert response.status_code == 200
     streamer_json = response.json()
     return_dict = {
@@ -199,7 +200,7 @@ def get_streamer_info(uid):
 
 
 def get_streamer_img(url, uid):
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, proxies=proxies)
     assert response.status_code == 200
     uimg = Image.open(BytesIO(response.content))
     uimg_src = os.path.dirname(os.path.abspath(__file__)) + '\\' + uid + '_tmp.png'
@@ -358,6 +359,7 @@ class SettingWindow(tk.Toplevel):
         timeIntStr = self.timeInt.get()
 
         roomID = idStr.split(',')
+        global rowdata
         rowdatat = []
         flag2 = 0
         try:
@@ -374,7 +376,8 @@ class SettingWindow(tk.Toplevel):
                 else:
                     rowt = (streamer_info[rid]['uname'], rid, '未开播')
                 rowdatat.append(rowt)
-            live_status_tab.build_table_data(coldata=coldata, rowdata=rowdatat)
+            rowdata = rowdatat
+            live_status_tab.build_table_data(coldata=coldata, rowdata=rowdata)
             live_status_tab.reset_table()
 
         except Exception as e:
